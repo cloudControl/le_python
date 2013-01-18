@@ -115,7 +115,8 @@ class LogentriesHandler(logging.Handler):
 
         if not self._started and self.good_config:
             dbg("Starting Logentries Asynchronous Socket Appender")
-            self._thread.start()
+            if not self._thread.is_alive():
+                self._thread.start()
             self._started = True
 
         msg = self.format(record).rstrip('\n')
