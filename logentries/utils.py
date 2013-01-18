@@ -8,7 +8,7 @@ import random
 import time
 
 # Size of the internal event queue
-QUEUE_SIZE = 32768;
+QUEUE_SIZE = 32768
 # Logentries API server address
 LE_API = "api.logentries.com"
 # Port number for token logging to Logentries API server
@@ -22,105 +22,106 @@ LE = "LE: "
 # Error message displayed when an incorrect Token has been detected
 INVALID_TOKEN = "\n\nIt appears the LOGENTRIES_TOKEN parameter you entered is incorrect!\n\n"
 
+
 def dbg(msg):
     print LE + msg
+
 
 def check_token(token):
     import re
 
     valid = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-	
+
     return valid.match(token)
+
 
 class SocketAppender(threading.Thread):
     def __init__(self):
-	    threading.Thread.__init__(self)
-	    self.daemon = True
-	    self._conn = None
-	    self._queue = Queue.Queue(QUEUE_SIZE)
+        threading.Thread.__init__(self)
+        self.daemon = True
+        self._conn = None
+        self._queue = Queue.Queue(QUEUE_SIZE)
 
     def openConnection(self):
-	    self._conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	
-	    self._conn.connect((LE_API, LE_PORT))
+        self._conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._conn.connect((LE_API, LE_PORT))
 
     def reopenConnection(self):
-	    self.closeConnection()
+        self.closeConnection()
 
-	    root_delay = MIN_DELAY
-	    while True:
-		    try:
-			    self.openConnection()
-			    return
-		    except Exception, e:
-			    dbg("Unable to connect to Logentries")
+        root_delay = MIN_DELAY
+        while True:
+            try:
+                self.openConnection()
+                return
+            except Exception:
+                dbg("Unable to connect to Logentries")
 
-		    root_delay *= 2
-		    if(root_delay > MAX_DELAY):
-			    root_delay = MAX_DELAY
-		
-		    wait_for = root_delay + random.uniform(0, root_delay)
-		    
-		    try:
-			    time.sleep(wait_for)
-		    except KeyboardInterrupt, e:
-				raise KeyboardInterrupt
-	
+            root_delay *= 2
+            if(root_delay > MAX_DELAY):
+                root_delay = MAX_DELAY
+
+            wait_for = root_delay + random.uniform(0, root_delay)
+
+            try:
+                time.sleep(wait_for)
+            except KeyboardInterrupt:
+                raise KeyboardInterrupt
+
     def closeConnection(self):
-	    if(self._conn != None):
-		    self._conn.close()
-
+        if(self._conn is not None):
+            self._conn.close()
 
     def run(self):
-	    try:
-		    # Open connection
-		    self.reopenConnection()
+        try:
+            # Open connection
+            self.reopenConnection()
 
-		    # Send data in queue
-		    while True:
-			    # Take data from queue
-				data = self._queue.get(block=True)
+            # Send data in queue
+            while True:
+                # Take data from queue
+                data = self._queue.get(block=True)
 
-			    # Send data, reconnect if needed
-				while True:
-				    try:
-					    self._conn.send(data)	
-				    except socket.error, e:
-					    self.reopenConnection()
-					    continue
-						
-				    break
-	    except KeyboardInterrupt, e:
-		    dbg("Logentries asynchronous socket client interrupted")
+                # Send data, reconnect if needed
+                while True:
+                    try:
+                        self._conn.send(data)
+                    except socket.error:
+                        self.reopenConnection()
+                        continue
 
-	    self.closeConnection()
+                    break
+        except KeyboardInterrupt:
+            dbg("Logentries asynchronous socket client interrupted")
+
+        self.closeConnection()
 
 
 class LogentriesHandler(logging.Handler):
     def __init__(self, token):
-	    logging.Handler.__init__(self)
-	    self.token = token
-	    self.good_config = True
-	    if not check_token(token):
-		    dbg(INVALID_TOKEN)
-		    self.good_config = False
-	    format = logging.Formatter('%(asctime)s : %(levelname)s, %(message)s', '%a %b %d %H:%M:%S %Z %Y')
-	    self.setFormatter(format)
-	    self.setLevel(logging.DEBUG)
-	    self._thread = SocketAppender()
-	    self._started = False
+        logging.Handler.__init__(self)
+        self.token = token
+        self.good_config = True
+        if not check_token(token):
+            dbg(INVALID_TOKEN)
+            self.good_config = False
+        format = logging.Formatter('%(asctime)s : %(levelname)s, %(message)s', '%a %b %d %H:%M:%S %Z %Y')
+        self.setFormatter(format)
+        self.setLevel(logging.DEBUG)
+        self._thread = SocketAppender()
+        self._started = False
 
     def emit(self, record):
 
-	    if not self._started and self.good_config:
-		    dbg("Starting Logentries Asynchronous Socket Appender") 
-		    self._thread.start()
-		    self._started = True
+        if not self._started and self.good_config:
+            dbg("Starting Logentries Asynchronous Socket Appender")
+            self._thread.start()
+            self._started = True
 
-	    msg = self.format(record).rstrip('\n')
-	    msg = self.token + msg + '\n'
+        msg = self.format(record).rstrip('\n')
+        msg = self.token + msg + '\n'
 
-	    self._thread._queue.put(msg)
-
+        self._thread._queue.put(msg)
 
     def close(self):
-	    logging.Handler.close(self)
+        logging.Handler.close(self)
